@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Strain Feedback</title>
+<style>
+  :root {
+    --bg: #1b1d1c;
+    --card: #ffffff;
+    --accent: #4a7c59;
+    --accent-dark: #2f5238;
+    --text: #222;
+    --muted: #777;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    min-height: 100vh;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 24px 12px;
+  }
+  .card {
+    background: var(--card);
+    border-radius: 18px;
+    max-width: 480px;
+    width: 100%;
+    padding: 28px 24px 32px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+  }
+  h1 {
+    margin: 0 0 4px;
+    font-size: 1.5rem;
+    color: var(--text);
+  }
+  .strain-name {
+    color: var(--accent-dark);
+    font-weight: 700;
+  }
+  .subtitle {
+    margin: 0 0 24px;
+    color: var(--muted);
+    font-size: 0.92rem;
+  }
+  .category {
+    margin-bottom: 20px;
+  }
+  .category label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: var(--text);
+  }
+  .rating-buttons {
+    display: flex;
+    gap: 8px;
+  }
+  .rating-buttons button {
+    flex: 1;
+    padding: 10px 0;
+    border: 2px solid #ddd;
+    background: #fafafa;
+    border-radius: 10px;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .rating-buttons button:hover {
+    border-color: var(--accent);
+  }
+  .rating-buttons button.selected {
+    background: var(--accent);
+    border-color: var(--accent-dark);
+    color: white;
+  }
+  textarea {
+    width: 100%;
+    min-height: 100px;
+    border: 2px solid #ddd;
+    border-radius: 10px;
+    padding: 10px;
+    font-size: 0.95rem;
+    font-family: inherit;
+    resize: vertical;
+  }
+  textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+  .char-count {
+    text-align: right;
+    font-size: 0.8rem;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+  .char-count.warn {
+    color: #c0392b;
+  }
+  .submit-btn {
+    margin-top: 20px;
+    width: 100%;
+    padding: 14px;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-size: 1.05rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s ease;
+  }
+  .submit-btn:hover {
+    background: var(--accent-dark);
+  }
+  .submit-btn:disabled {
+    background: #aaa;
+    cursor: not-allowed;
+  }
+  .status-msg {
+    margin-top: 14px;
+    text-align: center;
+    font-size: 0.9rem;
+  }
+  .status-msg.error { color: #c0392b; }
+  .status-msg.success { color: var(--accent-dark); font-weight: 600; }
+  .thankyou {
+    text-align: center;
+    padding: 40px 10px;
+  }
+  .thankyou h2 {
+    color: var(--accent-dark);
+    margin-bottom: 8px;
+  }
+</style>
+</head>
+<body>
+
+<div class="card" id="card">
+  <!-- ============================================================
+       EDIT THESE CATEGORIES TO CHANGE WHAT GETS RATED
+       Just edit the array below, the form builds itself from it.
+  ============================================================ -->
+  <div id="formView">
+    <h1>Rate this batch: <span class="strain-name" id="strainName">Unknown Strain</span></h1>
+    <p class="subtitle">1 = poor, 5 = excellent. Takes about 30 seconds.</p>
+
+    <div id="categoriesContainer"></div>
+
+    <div class="category">
+      <label for="comments">Any other thoughts? (optional, 500 char max)</label>
+      <textarea id="comments" maxlength="500" placeholder="Smell stronger than expected, great for evening use, etc."></textarea>
+      <div class="char-count" id="charCount">0 / 500</div>
+    </div>
+
+    <button class="submit-btn" id="submitBtn">Submit Feedback</button>
+    <div class="status-msg" id="statusMsg"></div>
+  </div>
+
+  <div class="thankyou" id="thankYouView" style="display:none;">
+    <h2>Thanks!</h2>
+    <p>Your feedback was submitted. Appreciate you taking the time.</p>
+  </div>
+</div>
+
+<script>
+  // ============================================================
+  // CONFIG — edit these to customize the form
+  // ============================================================
+
+  // 1. Categories to rate. Edit this list anytime.
+  const CATEGORIES = ["Smell", "Sight", "Smokeability", "Rollability", "Effect"];
+
+  // 2. Your Google Apps Script Web App URL goes here once you set it up.
+  //    (Instructions for getting this URL are provided separately.)
+  const SUBMIT_URL = "PASTE_YOUR_APPS_SCRIPT_URL_HERE";
+
+  // ============================================================
+  // Logic — shouldn't need to touch below this line
+  // ============================================================
+
+  // Read strain name from URL, e.g. yoursite.com/feedback.html?strain=Early%20Frost
+  const params = new URLSearchParams(window.location.search);
+  const strain = params.get("strain") || "Unknown Strain";
+  document.getElementById("strainName").textContent = strain;
+
+  // Build rating rows dynamically
+  const container = document.getElementById("categoriesContainer");
+  const ratings = {};
+
+  CATEGORIES.forEach(cat => {
+    ratings[cat] = null;
+    const div = document.createElement("div");
+    div.className = "category";
+
+    const label = document.createElement("label");
+    label.textContent = cat;
+    div.appendChild(label);
+
+    const btnRow = document.createElement("div");
+    btnRow.className = "rating-buttons";
+
+    for (let i = 1; i <= 5; i++) {
+      const btn = document.createElement("button");
+      btn.textContent = i;
+      btn.type = "button";
+      btn.addEventListener("click", () => {
+        ratings[cat] = i;
+        Array.from(btnRow.children).forEach(b => b.classList.remove("selected"));
+        btn.classList.add("selected");
+      });
+      btnRow.appendChild(btn);
+    }
+    div.appendChild(btnRow);
+    container.appendChild(div);
+  });
+
+  // Character counter
+  const commentsEl = document.getElementById("comments");
+  const charCountEl = document.getElementById("charCount");
+  commentsEl.addEventListener("input", () => {
+    const len = commentsEl.value.length;
+    charCountEl.textContent = `${len} / 500`;
+    charCountEl.classList.toggle("warn", len >= 480);
+  });
+
+  // Submit handler
+  const submitBtn = document.getElementById("submitBtn");
+  const statusMsg = document.getElementById("statusMsg");
+
+  submitBtn.addEventListener("click", async () => {
+    const missing = CATEGORIES.filter(cat => ratings[cat] === null);
+    if (missing.length > 0) {
+      statusMsg.textContent = `Please rate: ${missing.join(", ")}`;
+      statusMsg.className = "status-msg error";
+      return;
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Submitting...";
+    statusMsg.textContent = "";
+
+    const payload = {
+      strain: strain,
+      timestamp: new Date().toISOString(),
+      comments: commentsEl.value.trim(),
+      ...ratings
+    };
+
+    try {
+      if (SUBMIT_URL === "PASTE_YOUR_APPS_SCRIPT_URL_HERE") {
+        throw new Error("Form isn't connected to a backend yet. (SUBMIT_URL not set)");
+      }
+
+      await fetch(SUBMIT_URL, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify(payload)
+      });
+
+      document.getElementById("formView").style.display = "none";
+      document.getElementById("thankYouView").style.display = "block";
+    } catch (err) {
+      statusMsg.textContent = "Something went wrong: " + err.message;
+      statusMsg.className = "status-msg error";
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Submit Feedback";
+    }
+  });
+</script>
+
+</body>
+</html>
