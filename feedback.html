@@ -79,19 +79,24 @@
     border-color: var(--accent-dark);
     color: white;
   }
-  textarea {
+  textarea, input[type="text"] {
     width: 100%;
-    min-height: 100px;
     border: 2px solid #ddd;
     border-radius: 10px;
     padding: 10px;
     font-size: 0.95rem;
     font-family: inherit;
+  }
+  textarea {
+    min-height: 100px;
     resize: vertical;
   }
-  textarea:focus {
+  textarea:focus, input[type="text"]:focus {
     outline: none;
     border-color: var(--accent);
+  }
+  .initials-input {
+    width: 120px;
   }
   .char-count {
     text-align: right;
@@ -142,13 +147,15 @@
 <body>
 
 <div class="card" id="card">
-  <!-- ============================================================
-       EDIT THESE CATEGORIES TO CHANGE WHAT GETS RATED
-       Just edit the array below, the form builds itself from it.
-  ============================================================ -->
   <div id="formView">
     <h1>Rate this batch: <span class="strain-name" id="strainName">Unknown Strain</span></h1>
     <p class="subtitle">1 = poor, 5 = excellent. Takes about 30 seconds.</p>
+
+    <!-- Initials field -->
+    <div class="category">
+      <label for="initials">Your initials (required, 5 char max)</label>
+      <input type="text" id="initials" class="initials-input" maxlength="5" placeholder="e.g. MTP" autocomplete="off" />
+    </div>
 
     <div id="categoriesContainer"></div>
 
@@ -174,22 +181,20 @@
   // ============================================================
 
   // 1. Categories to rate. Edit this list anytime.
-  const CATEGORIES = ["Smell", "Sight", "Smokeability", "Rollability", "Effect"];
+  //    "Rollability" gets an automatic N/A button in addition to 1-5.
+  const CATEGORIES = ["Sight", "Smell", "Rollability", "Smokeability", "Effect"];
 
-  // 2. Your Google Apps Script Web App URL goes here once you set it up.
-  //    (Instructions for getting this URL are provided separately.)
-  const SUBMIT_URL = "https://script.google.com/macros/s/AKfycbwyILnpcTlf51jUa_RjLFbbocR9MpBZwsr-BwWu1fh7u8IpfG-G82Qqd0rG7T-pwhoszQ/exec";
+  // 2. Your Google Apps Script Web App URL.
+  const SUBMIT_URL = "https://script.google.com/macros/s/AKfycbyVgWh7DsxgCyqKXv_FjTZXQp5D6yD2KoIBbyPqwJE0DF3VnByvgR9CH9IxW3apg-FSDg/exec";
 
   // ============================================================
   // Logic — shouldn't need to touch below this line
   // ============================================================
 
-  // Read strain name from URL, e.g. yoursite.com/feedback.html?strain=Early%20Frost
   const params = new URLSearchParams(window.location.search);
   const strain = params.get("strain") || "Unknown Strain";
   document.getElementById("strainName").textContent = strain;
 
-  // Build rating rows dynamically
   const container = document.getElementById("categoriesContainer");
   const ratings = {};
 
@@ -216,11 +221,25 @@
       });
       btnRow.appendChild(btn);
     }
+
+    // N/A button only for Rollability
+    if (cat === "Rollability") {
+      const naBtn = document.createElement("button");
+      naBtn.textContent = "N/A";
+      naBtn.type = "button";
+      naBtn.addEventListener("click", () => {
+        ratings[cat] = "N/A";
+        Array.from(btnRow.children).forEach(b => b.classList.remove("selected"));
+        naBtn.classList.add("selected");
+      });
+      btnRow.appendChild(naBtn);
+    }
+
     div.appendChild(btnRow);
     container.appendChild(div);
   });
 
-  // Character counter
+  // Character counter for comments
   const commentsEl = document.getElementById("comments");
   const charCountEl = document.getElementById("charCount");
   commentsEl.addEventListener("input", () => {
@@ -234,6 +253,15 @@
   const statusMsg = document.getElementById("statusMsg");
 
   submitBtn.addEventListener("click", async () => {
+    // Validate initials
+    const initials = document.getElementById("initials").value.trim();
+    if (!initials) {
+      statusMsg.textContent = "Please enter your initials before submitting.";
+      statusMsg.className = "status-msg error";
+      return;
+    }
+
+    // Validate all ratings selected
     const missing = CATEGORIES.filter(cat => ratings[cat] === null);
     if (missing.length > 0) {
       statusMsg.textContent = `Please rate: ${missing.join(", ")}`;
@@ -246,6 +274,7 @@
     statusMsg.textContent = "";
 
     const payload = {
+      initials: initials,
       strain: strain,
       timestamp: new Date().toISOString(),
       comments: commentsEl.value.trim(),
@@ -253,10 +282,6 @@
     };
 
     try {
-      if (SUBMIT_URL === "PASTE_YOUR_APPS_SCRIPT_URL_HERE") {
-        throw new Error("Form isn't connected to a backend yet. (SUBMIT_URL not set)");
-      }
-
       await fetch(SUBMIT_URL, {
         method: "POST",
         headers: { "Content-Type": "text/plain;charset=utf-8" },
